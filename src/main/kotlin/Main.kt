@@ -46,15 +46,17 @@ class FirstView: View() {
             //Tell the controller to send the data to the arduino
             button("Send Instructions") {
                 action {
+                    //runAsync here in case this blocks and
+                    //freezes the UI
                     runAsync {
-                        controller.getInstructions()
+                        controller.sendInstructions()
                     }
                 }
             }
 
             button("Clear") {
                 action {
-                    instructionPane.children.clear()
+                    controller.clearInstructions()
                 }
             }
         }
@@ -156,11 +158,15 @@ class MyController(private val instructionPane: Pane, private val instructionPal
         }
     }
 
-    fun getInstructions() {
-        val list = instructionPane.children.filtered { it is InstructionButton }
-        for (item in list) {
+    fun sendInstructions() {
+        println("Sending!")
+        for (item in instructions) {
             println(item)
         }
+    }
+
+    fun clearInstructions() {
+        instructions.clear()
     }
 }
 
