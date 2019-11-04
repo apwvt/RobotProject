@@ -95,11 +95,11 @@ class MyController(private val instructionPane: Pane, private val instructionPal
 
     //Set up the change listener to update the instruction pane
     init {
-        instructions.addListener { listener: ListChangeListener.Change<out RobotInstruction> ->
+        instructions.addListener { _: ListChangeListener.Change<out RobotInstruction> ->
             instructionPane.children.clear()
 
-            for (inst in instructions) {
-                val newButton = InstructionButton(inst, instructionPane)
+            for ((i, inst) in instructions.withIndex()) {
+                val newButton = InstructionButton(inst, this, i)
                 instructionPane.children.add(newButton)
             }
         }
@@ -114,7 +114,10 @@ class MyController(private val instructionPane: Pane, private val instructionPal
     /**
      * Buttons in the instruction palette for adding instructions.
      */
-    class InstructionSelectionButton(val robotInstruction: RobotInstruction, val controller: MyController): Button() {
+    class InstructionSelectionButton(
+        private val robotInstruction: RobotInstruction,
+        private val controller: MyController
+    ): Button() {
         init {
             text = nameMap[robotInstruction]
 
@@ -130,7 +133,14 @@ class MyController(private val instructionPane: Pane, private val instructionPal
         }
     }
 
-    class InstructionButton(val robotInstruction: RobotInstruction, val parent: Pane): Button() {
+    /**
+     * Buttons representing a single instruction for the robot to execute.
+     */
+    class InstructionButton(
+        robotInstruction: RobotInstruction,
+        private val controller: MyController,
+        private val index: Int
+    ): Button() {
         init {
             text = nameMap[robotInstruction]
 
@@ -141,7 +151,7 @@ class MyController(private val instructionPane: Pane, private val instructionPal
             maxWidth = 100.0
 
             action {
-                parent.children.remove(this)
+                controller.instructions.removeAt(index)
             }
         }
     }
