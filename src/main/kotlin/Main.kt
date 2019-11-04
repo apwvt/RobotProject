@@ -1,25 +1,27 @@
+import javafx.collections.FXCollections
+import javafx.collections.ListChangeListener
 import javafx.geometry.Insets
-import javafx.geometry.Pos
 import javafx.scene.control.Button
 import javafx.scene.layout.Background
 import javafx.scene.layout.BackgroundFill
 import javafx.scene.layout.CornerRadii
 import javafx.scene.layout.Pane
 import javafx.scene.paint.Color
-import javafx.scene.text.TextAlignment
 import tornadofx.*
 
 class MyApp: App(FirstView::class)
 
 class FirstView: View() {
-    var instructionPane: Pane by singleAssign()
-    var controller: MyController by singleAssign()
+    private var instructionPane: Pane by singleAssign()
+    private var instructionPalette: Pane by singleAssign()
+    private var controller: MyController by singleAssign()
 
     override val root = vbox {
         label("Doom Robot Control Program") {
             minWidth = this@vbox.width //Full width of parent
             minHeight = 50.0
         }
+
         hbox {
             instructionPane = flowpane {
                 minWidth = 450.0
@@ -32,83 +34,118 @@ class FirstView: View() {
                     CornerRadii.EMPTY,
                     Insets.EMPTY
                 ))
+            }
 
-                instructionbutton("Go Forward") {
-                    robotInstruction = RobotInstruction.FORWARD
-                }
-
-                instructionbutton("Turn Left") {
-                    robotInstruction = RobotInstruction.LEFT
-                }
-
-                instructionbutton("Light Up") {
-                    robotInstruction = RobotInstruction.LIGHT
-                }
-
-                instructionbutton("Go Forward") {
-                    robotInstruction = RobotInstruction.FORWARD
-                }
-
-                instructionbutton("Light Up") {
-                    robotInstruction = RobotInstruction.LIGHT
-                }
-
-                instructionbutton("Kill The Humans") {
-                    robotInstruction = RobotInstruction.KILL_ALL_HUMANS
-                }
+            instructionPalette = vbox {
+                minWidth = 150.0
             }
         }
 
-        button("Send Instructions") {
+        /* Bottom row of the UI */
+        hbox {
+            //Tell the controller to send the data to the arduino
+            button("Send Instructions") {
+                action {
+                    runAsync {
+                        controller.getInstructions()
+                    }
+                }
+            }
+
+            button("Clear") {
+                action {
+                    instructionPane.children.clear()
+                }
+            }
+        }
+    }
+
+    init {
+        controller = MyController(instructionPane, instructionPalette)
+    }
+}
+
+
+class MyController(private val instructionPane: Pane, private val instructionPalette: Pane): Controller() {
+    companion object {
+        /**
+         * The 'nice' representations of the RobotInstruction class.
+         */
+        val nameMap = mapOf(
+            RobotInstruction.FORWARD to "Forward",
+            RobotInstruction.BACKWARD to "Backward",
+            RobotInstruction.LEFT to "Turn Left",
+            RobotInstruction.RIGHT to "Turn Right",
+            RobotInstruction.LIGHT to "Turn On Light",
+            RobotInstruction.KILL_ALL_HUMANS to "Kill All Humans"
+        )
+
+        /**
+         * The types of instruction that the robot can be programmed to recieve.
+         */
+        enum class RobotInstruction {
+            FORWARD, BACKWARD, LEFT, RIGHT, LIGHT, KILL_ALL_HUMANS
+        }
+    }
+
+    /**
+     * The instruction queue to send to the robot.
+     */
+    private val instructions = FXCollections.observableArrayList<RobotInstruction>()
+
+    //Set up the change listener to update the instruction pane
+    init {
+        instructions.addListener { listener: ListChangeListener.Change<out RobotInstruction> ->
+            instructionPane.children.clear()
+
+            for (inst in instructions) {
+                val newButton = InstructionButton(inst, instructionPane)
+                instructionPane.children.add(newButton)
+            }
+        }
+
+        //Add a button in the instruction palette for each instruction
+        enumValues<RobotInstruction>().forEach { i ->
+            val newButton = InstructionSelectionButton(i, this)
+            instructionPalette.children.add(newButton)
+        }
+    }
+
+    /**
+     * Buttons in the instruction palette for adding instructions.
+     */
+    class InstructionSelectionButton(val robotInstruction: RobotInstruction, val controller: MyController): Button() {
+        init {
+            text = nameMap[robotInstruction]
+
+            minHeight = 50.0
+            maxHeight = 50.0
+
+            minWidth = 150.0
+            maxWidth = 150.0
+
             action {
-                runAsync {
-                    controller.getInstructions()
-                }
+                controller.instructions.add(robotInstruction)
             }
         }
     }
 
-    init {
-        controller = MyController(instructionPane)
-    }
-}
+    class InstructionButton(val robotInstruction: RobotInstruction, val parent: Pane): Button() {
+        init {
+            text = nameMap[robotInstruction]
 
-class InstructionButton(bText: String, val parent: Pane): Button() {
-    var robotInstruction = RobotInstruction.KILL_ALL_HUMANS
-    init {
-        text = bText
+            minHeight = 100.0
+            maxHeight = 100.0
 
-        minHeight = 100.0
-        maxHeight = 100.0
+            minWidth = 100.0
+            maxWidth = 100.0
 
-        minWidth = 100.0
-        maxWidth = 100.0
-
-        action {
-            parent.children.remove(this)
+            action {
+                parent.children.remove(this)
+            }
         }
     }
-}
 
-//Extension function for above
-fun Pane.instructionbutton(text: String, function: (InstructionButton.() -> Unit)): InstructionButton {
-    val button = InstructionButton(text, this)
-    button.apply(function)
-
-    children.add(button)
-
-    return button
-}
-
-fun Pane.instructionbutton(text: String): InstructionButton {
-    return instructionbutton(text) {}
-}
-
-enum class RobotInstruction {
-    FORWARD, BACKWARD, LEFT, RIGHT, LIGHT, KILL_ALL_HUMANS
-}
-
-class MyController(val instructionPane: Pane): Controller() {
     fun getInstructions() {
         val list = instructionPane.children.filtered { it is InstructionButton }
         for (item in list) {
