@@ -2,6 +2,7 @@ import javafx.collections.FXCollections
 import javafx.collections.ListChangeListener
 import javafx.geometry.Insets
 import javafx.scene.control.Button
+import javafx.scene.control.Label
 import javafx.scene.layout.Background
 import javafx.scene.layout.BackgroundFill
 import javafx.scene.layout.CornerRadii
@@ -12,8 +13,9 @@ import tornadofx.*
 class MyApp: App(FirstView::class)
 
 class FirstView: View() {
-    private var instructionPane: Pane by singleAssign()
-    private var instructionPalette: Pane by singleAssign()
+    var instructionPane: Pane by singleAssign()
+    var instructionPalette: Pane by singleAssign()
+    var statusLabel: Label by singleAssign()
     private var controller: MyController by singleAssign()
 
     override val root = vbox {
@@ -46,8 +48,8 @@ class FirstView: View() {
             //Tell the controller to send the data to the arduino
             button("Send Instructions") {
                 action {
-                    //runAsync here in case this blocks and
-                    //freezes the UI
+                    // runAsync here in case this blocks and
+                    // freezes the UI
                     runAsync {
                         controller.sendInstructions()
                     }
@@ -59,16 +61,24 @@ class FirstView: View() {
                     controller.clearInstructions()
                 }
             }
+
+            button("Connect to Robot") {
+                action {
+                    controller.openConnection()
+                }
+            }
+
+            statusLabel = label("Status: Not Connected")
         }
     }
 
     init {
-        controller = MyController(instructionPane, instructionPalette)
+        controller = MyController(this)
     }
 }
 
 
-class MyController(private val instructionPane: Pane, private val instructionPalette: Pane): Controller() {
+class MyController(private val robotView: FirstView): Controller() {
     companion object {
         /**
          * The 'nice' representations of the RobotInstruction class.
@@ -83,12 +93,15 @@ class MyController(private val instructionPane: Pane, private val instructionPal
         )
 
         /**
-         * The types of instruction that the robot can be programmed to recieve.
+         * The types of instruction that the robot can be programmed to receive.
          */
         enum class RobotInstruction {
-            FORWARD, BACKWARD, LEFT, RIGHT, LIGHT, KILL_ALL_HUMANS
+            NOTHING, FORWARD, BACKWARD, LEFT, RIGHT, LIGHT, KILL_ALL_HUMANS
         }
     }
+
+    private val instructionPane = robotView.instructionPane
+    private val instructionPalette = robotView.instructionPalette
 
     /**
      * The instruction queue to send to the robot.
@@ -158,15 +171,58 @@ class MyController(private val instructionPane: Pane, private val instructionPal
         }
     }
 
-    fun sendInstructions() {
-        println("Sending!")
-        for (item in instructions) {
-            println(item)
-        }
+    // Bluetooth tunnel
+    val btSerial = BluetoothSerial()
+
+    /**
+     * Request a connection from the [BluetoothSerial tunnel][btSerial].
+     *
+     * The connection may take any amount of time to open, but usually
+     * at least a few seconds.
+     *
+     * @see BluetoothSerial
+     */
+    fun openConnection() {
+        println("CONTROLLER: Requesting BT connection.")
+        btSerial.openConnection()
     }
 
+    /**
+     * Send the current [instruction queue][instructions] to the
+     * robot via a [BluetoothSerial tunnel][btSerial].
+     */
+    fun sendInstructions() {
+        println("CONTROLLER: Send requested.")
+        if (!btSerial.isConnected) {
+            println("CONTROLLER: Tunnel not ready.")
+            return
+        }
+
+        println("CONTROLLER: Data queueing.")
+        val bytes = ByteArray(instructions.size)
+        for ((i, item) in instructions.withIndex()) {
+            println(item)
+            bytes[i] = item.ordinal.toByte()
+        }
+
+        btSerial.send(bytes)
+        println("CONTROLLER: Data sent.")
+    }
+
+    /**
+     * Clear the [instruction queue][instructions].
+     */
     fun clearInstructions() {
         instructions.clear()
+    }
+
+    // Set up the connection status label.
+    init {
+        btSerial.addListener {
+            if (btSerial.isConnected) robotView.statusLabel.text = "Status: Connected"
+            else if (btSerial.isConnecting) robotView.statusLabel.text = "Status: Connecting"
+            else robotView.statusLabel.text = "Status: Not Connected"
+        }
     }
 }
 
