@@ -1,7 +1,11 @@
+import com.fazecast.jSerialComm.SerialPort
+import javafx.beans.property.Property
+import javafx.beans.property.SimpleObjectProperty
 import javafx.collections.FXCollections
 import javafx.collections.ListChangeListener
 import javafx.geometry.Insets
 import javafx.scene.control.Button
+import javafx.scene.control.ComboBox
 import javafx.scene.control.Label
 import javafx.scene.layout.Background
 import javafx.scene.layout.BackgroundFill
@@ -9,6 +13,7 @@ import javafx.scene.layout.CornerRadii
 import javafx.scene.layout.Pane
 import javafx.scene.paint.Color
 import tornadofx.*
+import javafx.collections.ObservableList
 
 class MyApp: App(FirstView::class)
 
@@ -16,7 +21,10 @@ class FirstView: View() {
     var instructionPane: Pane by singleAssign()
     var instructionPalette: Pane by singleAssign()
     var statusLabel: Label by singleAssign()
+    var portBox: ComboBox<SerialPort> by singleAssign()
     private var controller: MyController by singleAssign()
+
+    val selectedPortProperty = SimpleObjectProperty<SerialPort>()
 
     override val root = vbox {
         label("Doom Robot Control Program") {
@@ -62,18 +70,24 @@ class FirstView: View() {
                 }
             }
 
-            button("Connect to Robot") {
+            statusLabel = label("Status: Not Connected")
+            portBox = combobox(selectedPortProperty)
+
+            button("Refresh Ports") {
                 action {
-                    controller.openConnection()
+                    controller.btSerial.pollPorts()
                 }
             }
-
-            statusLabel = label("Status: Not Connected")
         }
     }
 
     init {
         controller = MyController(this)
+        portBox.items = controller.ports
+        selectedPortProperty.addListener { _, _, newVal ->
+            val value = newVal ?: return@addListener
+            controller.btSerial.selectPort(value)
+        }
     }
 }
 
@@ -107,6 +121,13 @@ class MyController(private val robotView: FirstView): Controller() {
      * The instruction queue to send to the robot.
      */
     private val instructions = FXCollections.observableArrayList<RobotInstruction>()
+
+    /**
+     * The ports list for the serial connection
+     */
+    val ports: ObservableList<SerialPort> by lazy {
+        FXCollections.observableArrayList<SerialPort>()
+    }
 
     //Set up the change listener to update the instruction pane
     init {
@@ -172,57 +193,38 @@ class MyController(private val robotView: FirstView): Controller() {
     }
 
     // Bluetooth tunnel
-    val btSerial = BluetoothSerial()
+    val btSerial = BluetoothSimpleSerial()
 
-    /**
-     * Request a connection from the [BluetoothSerial tunnel][btSerial].
-     *
-     * The connection may take any amount of time to open, but usually
-     * at least a few seconds.
-     *
-     * @see BluetoothSerial
-     */
-    fun openConnection() {
-        println("CONTROLLER: Requesting BT connection.")
-        btSerial.openConnection()
+    init {
+        btSerial.addListener {
+            this.ports.clear()
+            for (port in btSerial.ports) {
+                this.ports.add(port)
+            }
+        }
+
+        btSerial.pollPorts()
     }
 
-    /**
-     * Send the current [instruction queue][instructions] to the
-     * robot via a [BluetoothSerial tunnel][btSerial].
-     */
     fun sendInstructions() {
-        println("CONTROLLER: Send requested.")
-        if (!btSerial.isConnected) {
-            println("CONTROLLER: Tunnel not ready.")
+        if (!btSerial.ready) {
+            println("ERR: Ensure that the serial connection is ready to write!")
             return
         }
 
-        println("CONTROLLER: Data queueing.")
-        val bytes = ByteArray(instructions.size)
-        for ((i, item) in instructions.withIndex()) {
-            println(item)
-            bytes[i] = item.ordinal.toByte()
-        }
+        val bytes = ByteArray(instructions.size + 1)
+        bytes[0] = instructions.size.toByte()
 
-        btSerial.send(bytes)
-        println("CONTROLLER: Data sent.")
+        for (i in 1..instructions.size)
+            bytes[i] = instructions.get(i - 1).ordinal.toByte()
+
+        println("Instruction packet size: ${bytes[0] + 1}")
+
+        btSerial.write(bytes)
     }
 
-    /**
-     * Clear the [instruction queue][instructions].
-     */
     fun clearInstructions() {
         instructions.clear()
-    }
-
-    // Set up the connection status label.
-    init {
-        btSerial.addListener {
-            if (btSerial.isConnected) robotView.statusLabel.text = "Status: Connected"
-            else if (btSerial.isConnecting) robotView.statusLabel.text = "Status: Connecting"
-            else robotView.statusLabel.text = "Status: Not Connected"
-        }
     }
 }
 
